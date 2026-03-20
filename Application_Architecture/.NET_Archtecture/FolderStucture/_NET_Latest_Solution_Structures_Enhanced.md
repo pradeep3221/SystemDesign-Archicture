@@ -53,7 +53,8 @@
 23. [Native AOT](#23-native-aot)
 24. [SignalR — Real-Time Communication](#24-signalr--real-time-communication)
 25. [gRPC](#25-grpc)
-
+26. [OData](#26-odata)
+27. [GraphQL](#27-graphql)
 ---
 
 ## 1. Platform Overview — .NET 8 / 9 / 10
@@ -4094,6 +4095,751 @@ builder.Services.AddSwaggerGen();
 // }
 ```
 
+---
+
+## 26. OData
+ 
+OData (Open Data Protocol) is a REST-based protocol for building and consuming queryable APIs. It lets clients drive filtering, sorting, paging, field selection, and expansion — without custom query parameters or extra endpoints.
+ 
+```bash
+dotnet add package Microsoft.AspNetCore.OData          # .NET 8+
+dotnet add package Microsoft.EntityFrameworkCore        # EF Core for IQueryable backing
+```
+ 
+---
+ 
+### Setup (.NET 8+)
+ 
+```csharp
+using Microsoft.AspNetCore.OData;
+using Microsoft.OData.ModelBuilder;
+ 
+// Build the EDM (Entity Data Model)
+static IEdmModel BuildEdmModel()
+{
+    var builder = new ODataConventionModelBuilder();
+ 
+    builder.EntitySet<OrderDto>("Orders")
+           .EntityType
+           .HasKey(o => o.Id)
+           .Filter()      // allow $filter
+           .OrderBy()     // allow $orderby
+           .Select()      // allow $select
+           .Expand()      // allow $expand
+           .Count()       // allow $count
+           .Page(maxTopValue: 100, pageSizeValue: 20); // enforce max page size
+ 
+    builder.EntitySet<CustomerDto>("Customers")
+           .EntityType.HasKey(c => c.Id);
+ 
+    builder.EntitySet<ProductDto>("Products")
+           .EntityType.HasKey(p => p.Id);
+ 
+    return builder.GetEdmModel();
+}
+ 
+// Register
+builder.Services
+    .AddControllers()
+    .AddOData(opt => opt
+        .AddRouteComponents("odata", BuildEdmModel())
+        .Select()
+        .Filter()
+        .OrderBy()
+        .Expand()
+        .Count()
+        .SetMaxTop(100));
+```
+ 
+---
+ 
+### Controller
+ 
+```csharp
+[ApiController]
+[Route("odata/[controller]")]
+public class OrdersController(AppDbContext db) : ODataController
+{
+    // GET /odata/Orders
+    // GET /odata/Orders?$filter=status eq 'Submitted'&$orderby=createdAt desc&$top=20&$skip=0
+    // GET /odata/Orders?$select=id,status&$expand=Customer&$count=true
+    [HttpGet]
+    [EnableQuery(MaxExpansionDepth = 3, MaxNodeCount = 20)]
+    public IQueryable<OrderDto> Get()
+    {
+        return db.Orders
+                 .AsNoTracking()
+                 .Select(o => new OrderDto
+                 {
+                     Id         = o.Id.Value,
+                     Status     = o.Status.ToString(),
+                     CreatedAt  = o.CreatedAt,
+                     CustomerId = o.CustomerId.Value
+                 });
+        // EF Core translates OData clauses → SQL automatically
+    }
+ 
+    // GET /odata/Orders({id})
+    [HttpGet("{id}")]
+    [EnableQuery]
+    public SingleResult<OrderDto> Get(Guid id)
+    {
+        var result = db.Orders
+                       .AsNoTracking()
+                       .Where(o => o.Id == new OrderId(id))
+                       .Select(o => new OrderDto { Id = o.Id.Value, Status = o.Status.ToString() });
+ 
+        return SingleResult.Create(result);
+    }
+ 
+    // POST /odata/Orders
+    [HttpPost]
+    public async Task<IActionResult> Post([FromBody] CreateOrderRequest request, CancellationToken ct)
+    {
+        if (!ModelState.IsValid) return BadRequest(ModelState);
+ 
+        var order = Order.Create(new CustomerId(request.CustomerId));
+        db.Orders.Add(order);
+        await db.SaveChangesAsync(ct);
+ 
+        return Created(order);
+    }
+ 
+    // PATCH /odata/Orders({id})
+    [HttpPatch("{id}")]
+    public async Task<IActionResult> Patch(Guid id, [FromBody] Delta<OrderDto> delta, CancellationToken ct)
+    {
+        var order = await db.Orders.FindAsync([new OrderId(id)], ct);
+        if (order is null) return NotFound();
+ 
+        // Delta applies only the changed fields
+        delta.Patch(order);
+        await db.SaveChangesAsync(ct);
+        return Updated(order);
+    }
+ 
+    // DELETE /odata/Orders({id})
+    [HttpDelete("{id}")]
+    public async Task<IActionResult> Delete(Guid id, CancellationToken ct)
+    {
+        var order = await db.Orders.FindAsync([new OrderId(id)], ct);
+        if (order is null) return NotFound();
+ 
+        db.Orders.Remove(order);
+        await db.SaveChangesAsync(ct);
+        return NoContent();
+    }
+}
+```
+ 
+---
+ 
+### OData Query Examples
+ 
+```http
+# Filter
+GET /odata/Orders?$filter=status eq 'Submitted'
+GET /odata/Orders?$filter=createdAt gt 2024-01-01T00:00:00Z
+GET /odata/Orders?$filter=contains(customerName, 'Acme')
+GET /odata/Orders?$filter=totalAmount gt 100 and status ne 'Cancelled'
+ 
+# Sort
+GET /odata/Orders?$orderby=createdAt desc,status asc
+ 
+# Pagination (server-side)
+GET /odata/Orders?$top=20&$skip=40
+ 
+# Select specific fields
+GET /odata/Orders?$select=id,status,createdAt
+ 
+# Expand navigation properties
+GET /odata/Orders?$expand=Customer($select=name,email)
+GET /odata/Orders?$expand=Lines($expand=Product)
+ 
+# Count
+GET /odata/Orders?$count=true
+GET /odata/Orders/$count
+ 
+# Combine everything
+GET /odata/Orders
+  ?$filter=status eq 'Active'
+  &$orderby=createdAt desc
+  &$top=20
+  &$skip=0
+  &$select=id,status,createdAt
+  &$expand=Customer($select=name)
+  &$count=true
+```
+ 
+---
+ 
+### OData Response Shape
+ 
+```json
+{
+  "@odata.context": "https://api.example.com/odata/$metadata#Orders",
+  "@odata.count": 142,
+  "value": [
+    {
+      "id": "3fa85f64-5717-4562-b3fc-2c963f66afa6",
+      "status": "Submitted",
+      "createdAt": "2024-03-15T10:30:00Z",
+      "customer": {
+        "name": "Acme Corp",
+        "email": "orders@acme.com"
+      }
+    }
+  ],
+  "@odata.nextLink": "https://api.example.com/odata/Orders?$skip=20&$top=20"
+}
+```
+ 
+---
+ 
+### Securing OData Queries
+ 
+Always restrict what clients can query — unbounded OData is a performance and security risk.
+ 
+```csharp
+// Per-action restrictions
+[EnableQuery(
+    MaxTop              = 100,       // max $top value
+    MaxExpansionDepth   = 2,         // max nested $expand
+    MaxNodeCount        = 15,        // max nodes in $filter expression
+    MaxAnyAllExpressionDepth = 2,    // max any/all nesting
+    PageSize            = 20,        // default page size if $top not provided
+    AllowedQueryOptions = AllowedQueryOptions.Filter
+                        | AllowedQueryOptions.OrderBy
+                        | AllowedQueryOptions.Select
+                        | AllowedQueryOptions.Top
+                        | AllowedQueryOptions.Skip
+                        | AllowedQueryOptions.Count)]
+public IQueryable<OrderDto> Get() => /* ... */;
+ 
+// Model-level property restrictions
+builder.EntityType<OrderDto>()
+    .Property(o => o.InternalNotes)
+    .IsNotFilterable()
+    .IsNotSortable();
+```
+ 
+---
+ 
+### OData with Minimal APIs (Microsoft.AspNetCore.OData 9+)
+ 
+```csharp
+// Minimal API style — available in newer versions
+app.MapODataRoute("odata", "odata", BuildEdmModel());
+ 
+app.MapGet("odata/Orders", (
+    ODataQueryOptions<OrderDto> queryOptions,
+    AppDbContext db) =>
+{
+    var query = db.Orders.AsNoTracking()
+                  .Select(o => new OrderDto { Id = o.Id.Value, Status = o.Status.ToString() });
+ 
+    return queryOptions.ApplyTo(query);
+});
+```
+ 
+---
+ 
+### OData vs REST Comparison
+ 
+| Feature | Plain REST | OData |
+|---|---|---|
+| **Client-driven filtering** | ❌ Custom params per endpoint | ✅ Standard `$filter` |
+| **Field selection** | ❌ Always full object | ✅ `$select` |
+| **Relationship expansion** | ❌ Multiple requests | ✅ `$expand` |
+| **Sorting** | ❌ Custom per endpoint | ✅ `$orderby` |
+| **Paging** | ❌ Custom per endpoint | ✅ `$top` / `$skip` + `nextLink` |
+| **Schema discovery** | ❌ | ✅ `$metadata` endpoint |
+| **Client complexity** | Low | Medium |
+| **Server control** | High | ⚠️ Must restrict carefully |
+| **Best for** | Public APIs, mobile | Internal tools, admin UIs, BI |
+ 
+---
+ 
+### OData Packages
+ 
+| Package | Purpose |
+|---|---|
+| `Microsoft.AspNetCore.OData` | Core OData middleware for ASP.NET Core |
+| `Microsoft.OData.ModelBuilder` | EDM model builder |
+| `Microsoft.AspNetCore.OData.NewtonsoftJson` | Newtonsoft.Json support (if needed) |
+| `Simple.OData.Client` | Typed .NET OData client |
+ 
+---
+ 
+## 27. GraphQL
+ 
+GraphQL is a query language for your API. Clients request exactly the data they need — nothing more, nothing less — in a single request. In .NET, **Hot Chocolate** is the leading GraphQL server library.
+ 
+```bash
+dotnet add package HotChocolate.AspNetCore
+dotnet add package HotChocolate.Data.EntityFramework   # EF Core integration
+dotnet add package HotChocolate.AspNetCore.Voyager      # schema explorer UI
+dotnet add package StrawberryShake.Transport.Http       # typed .NET client
+```
+ 
+---
+ 
+### Setup (.NET 8+)
+ 
+```csharp
+builder.Services
+    .AddGraphQLServer()
+    .AddQueryType<QueryType>()
+    .AddMutationType<MutationType>()
+    .AddSubscriptionType<SubscriptionType>()
+    .AddType<OrderType>()
+    .AddType<CustomerType>()
+    .AddFiltering()          // enable @where filtering
+    .AddSorting()            // enable @orderBy sorting
+    .AddProjections()        // enable field-level projection to SQL
+    .AddInMemorySubscriptions()   // or .AddRedisSubscriptions(...)
+    .ModifyRequestOptions(opt => opt.IncludeExceptionDetails =
+        builder.Environment.IsDevelopment());
+ 
+app.MapGraphQL("/graphql");        // GraphQL endpoint
+app.MapBananaCakePop("/graphql/ui"); // in-browser IDE (Hot Chocolate's Banana Cake Pop)
+```
+ 
+---
+ 
+### Schema Definition — Code First
+ 
+```csharp
+// Object Types
+public class OrderType : ObjectType<OrderDto>
+{
+    protected override void Configure(IObjectTypeDescriptor<OrderDto> descriptor)
+    {
+        descriptor.Description("Represents a customer order.");
+ 
+        descriptor.Field(o => o.Id)
+                  .Description("The unique order identifier.");
+ 
+        descriptor.Field(o => o.Status)
+                  .Description("Current order status.");
+ 
+        // Resolve navigation — loaded via DataLoader (N+1 safe)
+        descriptor.Field("customer")
+                  .Description("The customer who placed the order.")
+                  .ResolveWith<OrderResolvers>(r => r.GetCustomerAsync(default!, default!, default!))
+                  .UseDataLoader<CustomerDataLoader>();
+    }
+}
+ 
+// Resolver class
+public class OrderResolvers
+{
+    public async Task<CustomerDto> GetCustomerAsync(
+        [Parent] OrderDto order,
+        CustomerDataLoader loader,
+        CancellationToken ct)
+        => await loader.LoadAsync(order.CustomerId, ct);
+}
+```
+ 
+---
+ 
+### Query Type
+ 
+```csharp
+public class QueryType : ObjectType
+{
+    protected override void Configure(IObjectTypeDescriptor descriptor)
+    {
+        descriptor.Name(OperationTypeNames.Query);
+ 
+        descriptor
+            .Field("orders")
+            .Description("Get a paginated, filterable list of orders.")
+            .UsePaging<OrderType>(options: new PagingOptions { MaxPageSize = 100 })
+            .UseProjection()
+            .UseFiltering()
+            .UseSorting()
+            .ResolveWith<QueryResolvers>(r => r.GetOrdersAsync(default!));
+ 
+        descriptor
+            .Field("order")
+            .Description("Get a single order by ID.")
+            .Argument("id", a => a.Type<NonNullType<UuidType>>())
+            .ResolveWith<QueryResolvers>(r => r.GetOrderAsync(default!, default!, default!));
+    }
+}
+ 
+public class QueryResolvers
+{
+    // IQueryable — Hot Chocolate translates filters/sorts/projections to SQL
+    public IQueryable<OrderDto> GetOrdersAsync([Service] AppDbContext db)
+        => db.Orders.AsNoTracking()
+                    .Select(o => new OrderDto
+                    {
+                        Id         = o.Id.Value,
+                        Status     = o.Status.ToString(),
+                        CreatedAt  = o.CreatedAt,
+                        CustomerId = o.CustomerId.Value
+                    });
+ 
+    public async Task<OrderDto?> GetOrderAsync(
+        Guid id,
+        [Service] AppDbContext db,
+        CancellationToken ct)
+        => await db.Orders
+                   .AsNoTracking()
+                   .Where(o => o.Id == new OrderId(id))
+                   .Select(o => new OrderDto { Id = o.Id.Value, Status = o.Status.ToString() })
+                   .FirstOrDefaultAsync(ct);
+}
+```
+ 
+---
+ 
+### Mutation Type
+ 
+```csharp
+public class MutationType : ObjectType
+{
+    protected override void Configure(IObjectTypeDescriptor descriptor)
+    {
+        descriptor.Name(OperationTypeNames.Mutation);
+ 
+        descriptor
+            .Field("createOrder")
+            .Argument("input", a => a.Type<NonNullType<InputObjectType<CreateOrderInput>>>())
+            .ResolveWith<MutationResolvers>(r =>
+                r.CreateOrderAsync(default!, default!, default!));
+ 
+        descriptor
+            .Field("cancelOrder")
+            .Argument("id", a => a.Type<NonNullType<UuidType>>())
+            .ResolveWith<MutationResolvers>(r =>
+                r.CancelOrderAsync(default!, default!, default!));
+    }
+}
+ 
+public record CreateOrderInput(Guid CustomerId, List<OrderLineInput> Lines);
+public record OrderLineInput(Guid ProductId, int Quantity, decimal UnitPrice);
+ 
+public class MutationResolvers
+{
+    public async Task<MutationResult<OrderDto>> CreateOrderAsync(
+        CreateOrderInput input,
+        [Service] IMediator mediator,
+        CancellationToken ct)
+    {
+        var result = await mediator.Send(
+            new CreateOrderCommand(input.CustomerId, input.Lines
+                .Select(l => new OrderLineDto(l.ProductId, l.Quantity, l.UnitPrice))
+                .ToList()), ct);
+ 
+        return result.IsSuccess
+            ? new MutationResult<OrderDto>(result.Value)
+            : new MutationResult<OrderDto>(
+                ErrorBuilder.New()
+                    .SetMessage(result.Error)
+                    .SetCode("ORDER_CREATE_FAILED")
+                    .Build());
+    }
+ 
+    public async Task<MutationResult<bool>> CancelOrderAsync(
+        Guid id,
+        [Service] IMediator mediator,
+        CancellationToken ct)
+    {
+        await mediator.Send(new CancelOrderCommand(id), ct);
+        return new MutationResult<bool>(true);
+    }
+}
+```
+ 
+---
+ 
+### Subscription Type (Real-time)
+ 
+```csharp
+public class SubscriptionType : ObjectType
+{
+    protected override void Configure(IObjectTypeDescriptor descriptor)
+    {
+        descriptor.Name(OperationTypeNames.Subscription);
+ 
+        descriptor
+            .Field("orderStatusChanged")
+            .Description("Fires when an order's status changes.")
+            .Argument("orderId", a => a.Type<UuidType>())
+            .Type<OrderStatusEventType>()
+            .ResolveWith<SubscriptionResolvers>(r => r.OnOrderStatusChangedAsync(default!, default!))
+            .Subscribe<SubscriptionResolvers>(r => r.SubscribeToOrderStatusAsync(default!, default!));
+    }
+}
+ 
+public class SubscriptionResolvers
+{
+    public async IAsyncEnumerable<OrderStatusEvent> SubscribeToOrderStatusAsync(
+        Guid? orderId,
+        [Service] ITopicEventReceiver receiver)
+    {
+        var topic  = orderId.HasValue ? $"order-status:{orderId}" : "order-status:*";
+        var stream = await receiver.SubscribeAsync<OrderStatusEvent>(topic);
+ 
+        await foreach (var evt in stream.ReadEventsAsync())
+            yield return evt;
+    }
+ 
+    public OrderStatusEvent OnOrderStatusChangedAsync(
+        [EventMessage] OrderStatusEvent evt,
+        [Service] ILogger<SubscriptionResolvers> logger)
+    {
+        logger.LogDebug("Status change: {OrderId} → {Status}", evt.OrderId, evt.Status);
+        return evt;
+    }
+}
+ 
+// Publish from a domain event handler
+public class OrderStatusChangedEventHandler(ITopicEventSender sender)
+    : INotificationHandler<OrderStatusChangedEvent>
+{
+    public async Task Handle(OrderStatusChangedEvent notification, CancellationToken ct)
+    {
+        await sender.SendAsync(
+            topic: $"order-status:{notification.OrderId}",
+            message: new OrderStatusEvent(notification.OrderId, notification.NewStatus),
+            cancellationToken: ct);
+    }
+}
+```
+ 
+---
+ 
+### DataLoader — Solving the N+1 Problem
+ 
+Without DataLoader, fetching 50 orders + their customers = 51 queries. DataLoader batches them into 2.
+ 
+```csharp
+public class CustomerDataLoader(IBatchScheduler scheduler, IServiceProvider sp)
+    : BatchDataLoader<Guid, CustomerDto>(scheduler)
+{
+    protected override async Task<IReadOnlyDictionary<Guid, CustomerDto>> LoadBatchAsync(
+        IReadOnlyList<Guid> keys,
+        CancellationToken ct)
+    {
+        // One query for ALL requested customer IDs
+        await using var scope = sp.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+ 
+        return await db.Customers
+            .Where(c => keys.Contains(c.Id.Value))
+            .Select(c => new CustomerDto { Id = c.Id.Value, Name = c.Name })
+            .ToDictionaryAsync(c => c.Id, ct);
+    }
+}
+```
+ 
+---
+ 
+### Authentication & Authorisation
+ 
+```csharp
+// Setup
+builder.Services
+    .AddGraphQLServer()
+    .AddAuthorization()         // integrates with ASP.NET Core policies
+    .AddQueryType<QueryType>();
+ 
+// On types/fields
+[Authorize]                             // requires authentication
+public class MutationType : ObjectType { }
+ 
+[Authorize(Policy = "AdminOnly")]       // requires specific policy
+public class AdminQueryType : ObjectType { }
+ 
+// Field-level — only authenticated users see this field
+descriptor.Field(o => o.InternalNotes)
+          .Authorize("AdminOnly");
+ 
+// In resolvers — access current user
+public async Task<OrderDto?> GetOrderAsync(
+    Guid id,
+    [Service] AppDbContext db,
+    ClaimsPrincipal claimsPrincipal,   // injected automatically
+    CancellationToken ct)
+{
+    var userId = claimsPrincipal.FindFirstValue(ClaimTypes.NameIdentifier);
+    // apply per-user filter ...
+}
+```
+ 
+---
+ 
+### Query Examples
+ 
+```graphql
+# Simple query — request exactly what you need
+query GetOrders {
+  orders(first: 20, order: { createdAt: DESC }) {
+    nodes {
+      id
+      status
+      createdAt
+    }
+    pageInfo {
+      hasNextPage
+      endCursor
+    }
+    totalCount
+  }
+}
+ 
+# Nested expansion — single request, no N+1
+query GetOrdersWithCustomer {
+  orders(first: 10, where: { status: { eq: SUBMITTED } }) {
+    nodes {
+      id
+      status
+      customer {
+        name
+        email
+      }
+      lines {
+        quantity
+        unitPrice
+        product {
+          name
+          sku
+        }
+      }
+    }
+  }
+}
+ 
+# Mutation
+mutation CreateOrder($input: CreateOrderInput!) {
+  createOrder(input: $input) {
+    id
+    status
+    createdAt
+  }
+}
+ 
+# Subscription — real-time updates
+subscription WatchOrder($orderId: UUID!) {
+  orderStatusChanged(orderId: $orderId) {
+    orderId
+    status
+    updatedAt
+  }
+}
+```
+ 
+---
+ 
+### Persisted Queries
+ 
+Prevents arbitrary query execution in production — clients can only run pre-registered queries.
+ 
+```csharp
+builder.Services
+    .AddGraphQLServer()
+    .UsePersistedQueryPipeline()
+    .AddReadOnlyFileSystemQueryStorage("./PersistedQueries")  // load from files
+    // or: .AddInMemoryQueryStorage()                         // register at startup
+    .ModifyRequestOptions(opt =>
+        opt.OnlyAllowPersistedQueries = !builder.Environment.IsDevelopment());
+```
+ 
+---
+ 
+### Security — Query Depth & Complexity Limits
+ 
+```csharp
+builder.Services
+    .AddGraphQLServer()
+    .AddMaxExecutionDepthRule(maxAllowedExecutionDepth: 6)
+    .AddCostAnalyzer()                  // reject expensive queries
+    .ModifyCostOptions(opt =>
+    {
+        opt.MaxFieldCost        = 1_000;
+        opt.MaxTypeCost         = 1_000;
+        opt.EnforceCostLimits   = true;
+    });
+```
+ 
+---
+ 
+### Strawberry Shake — Typed .NET Client
+ 
+```bash
+dotnet add package StrawberryShake.Transport.Http
+dotnet tool install StrawberryShake.Tools --global
+# Run codegen: dotnet graphql generate --url https://api/graphql
+```
+ 
+```graphql
+# GetOrders.graphql — define operation
+query GetOrders($first: Int!) {
+  orders(first: $first) {
+    nodes { id status createdAt }
+    pageInfo { hasNextPage endCursor }
+  }
+}
+```
+ 
+```csharp
+// Generated client (zero reflection, fully typed)
+builder.Services
+    .AddMyAppClient()   // generated extension method
+    .ConfigureHttpClient(c => c.BaseAddress = new Uri("https://api/graphql"));
+ 
+// Usage
+public class OrderSyncService(IMyAppClient client)
+{
+    public async Task SyncAsync(CancellationToken ct)
+    {
+        var result = await client.GetOrders.ExecuteAsync(first: 50, ct);
+ 
+        result.EnsureNoErrors();
+ 
+        foreach (var order in result.Data!.Orders.Nodes)
+            Console.WriteLine($"{order.Id}: {order.Status}");
+    }
+}
+```
+ 
+---
+ 
+### GraphQL vs REST vs OData
+ 
+| Feature | REST | OData | GraphQL |
+|---|---|---|---|
+| **Query flexibility** | ❌ Fixed per endpoint | ✅ Standard params | ✅ Fully client-driven |
+| **Type system / schema** | OpenAPI (optional) | ✅ `$metadata` | ✅ Strong SDL schema |
+| **Real-time** | ❌ (SSE/WS manual) | ❌ | ✅ Subscriptions built-in |
+| **Mutations** | HTTP verbs | HTTP verbs | ✅ Named mutations |
+| **Batching** | ❌ | ❌ | ✅ Multiple ops per request |
+| **N+1 protection** | Manual | ❌ | ✅ DataLoader built-in |
+| **Client tooling** | Mature | Good | ✅ Excellent (codegen) |
+| **Caching** | ✅ HTTP cache | ✅ HTTP cache | ⚠️ POST-based, needs APQ |
+| **Learning curve** | Low | Medium | Medium–High |
+| **Best for** | Public APIs, mobile | Internal/admin, BI | Complex frontends, BFF |
+ 
+---
+ 
+### Hot Chocolate Packages
+ 
+| Package | Purpose |
+|---|---|
+| `HotChocolate.AspNetCore` | Core GraphQL server |
+| `HotChocolate.Data.EntityFramework` | EF Core `IQueryable` integration |
+| `HotChocolate.AspNetCore.Authorization` | Policy-based auth integration |
+| `HotChocolate.Subscriptions.InMemory` | In-memory pub/sub |
+| `HotChocolate.Subscriptions.Redis` | Redis pub/sub for multi-instance |
+| `HotChocolate.AspNetCore.Voyager` | Schema visualiser UI |
+| `HotChocolate.Diagnostics` | OpenTelemetry integration |
+| `StrawberryShake.Transport.Http` | Typed .NET client |
+ 
 ---
 
 ## Updated Quick Reference — Full NuGet Package List
