@@ -98,8 +98,7 @@ Database Server  (SQL Server / PostgreSQL / MongoDB / Redis)
 
 ---
 
-## 3. Traditional Layered (N-Tier) Structure (API n-Layered Architecture
-)
+## 3. Traditional Layered (N-Tier) Structure (API n-Layered Architecture)
 > Always include a Unit Test project and a DB project in the solution.
 
 ---
