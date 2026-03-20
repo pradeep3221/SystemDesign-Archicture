@@ -1,0 +1,366 @@
+
+<style>
+  *{box-sizing:border-box;margin:0;padding:0;}
+  body{font-family:var(--font-sans,sans-serif);}
+  .app{background:#1a1a2e;border-radius:16px;padding:20px;color:#fff;}
+  h1{text-align:center;font-size:20px;font-weight:700;color:#f5c842;margin-bottom:4px;}
+  .sub{text-align:center;font-size:12px;color:#aaa;margin-bottom:14px;}
+  .tabs{display:flex;border-radius:10px;overflow:hidden;margin-bottom:10px;border:1px solid #333;}
+  .tab{flex:1;padding:9px;font-size:13px;font-weight:500;cursor:pointer;border:none;transition:background .2s,color .2s;background:#16213e;color:#aaa;text-align:center;}
+  .tab.active{background:#e07b25;color:#fff;}
+  .quote{text-align:center;font-size:12px;color:#bbb;font-style:italic;margin-bottom:14px;}
+  .canvas{background:#0f0f1a;border-radius:12px;padding:20px 16px;margin-bottom:10px;min-height:220px;}
+  .orch-node{border:2px solid #e07b25;border-radius:8px;padding:9px 16px;text-align:center;font-size:13px;font-weight:600;color:#f0f0f0;background:#1e1e3a;margin:0 auto;width:200px;transition:border-color .3s,background .3s,box-shadow .3s;}
+  .orch-node.active{border-color:#f5c842;background:#2a2a1a;box-shadow:0 0 12px #f5c84255;}
+  .orch-node.done{border-color:#27ae60;background:#1a2e1a;box-shadow:0 0 12px #27ae6055;}
+  .orch-node.compensating{border-color:#e74c3c;background:#2e1a1a;box-shadow:0 0 12px #e74c3c55;}
+  .vert-line{width:2px;height:20px;background:#444;margin:0 auto;transition:background .3s;}
+  .vert-line.active{background:#f5c842;}
+  .vert-line.comp{background:#e74c3c;}
+
+  /* ── Service row: more breathing room ── */
+  .svc-row{
+    display:flex;
+    justify-content:center;
+    align-items:flex-start;
+    gap:20px;          /* was 10px */
+    margin-bottom:8px;
+    flex-wrap:nowrap;
+  }
+  .svc-box{
+    border:1.5px solid #333;
+    border-radius:10px;
+    padding:14px 10px 12px; /* was 8px 6px */
+    text-align:center;
+    background:#16213e;
+    flex:1;
+    min-width:0;
+    max-width:110px;   /* was 82px */
+    transition:all .3s;
+  }
+  .svc-box .svc-icon{font-size:22px;margin-bottom:6px;}   /* was 17px / 3px */
+  .svc-box .svc-name{font-size:12px;font-weight:600;color:#ddd;}
+  .svc-box .svc-st{font-size:10px;color:#888;min-height:14px;margin-top:4px;} /* was 9.5px / 2px */
+
+  .svc-box.running{border-color:#3498db;background:#0d1f3c;box-shadow:0 0 10px #3498db44;animation:blink .7s ease-in-out infinite alternate;}
+  .svc-box.success{border-color:#27ae60;background:#0d2e1a;box-shadow:0 0 8px #27ae6044;}
+  .svc-box.failed{border-color:#e74c3c;background:#2e0d0d;box-shadow:0 0 10px #e74c3c44;}
+  .svc-box.compensating{border-color:#f39c12;background:#2e1e0d;animation:blink .5s ease-in-out infinite alternate;}
+  .svc-box.compensated{border-color:#f39c12;background:#2e1e0d;opacity:.7;}
+  @keyframes blink{from{opacity:1}to{opacity:.6}}
+
+  .event-bus{background:#0d1f2e;border:1.5px dashed #3498db55;border-radius:8px;padding:8px 12px;text-align:center;font-size:11px;color:#3498db;margin-bottom:10px;}
+  .event-pill{display:inline-block;background:#0d2535;border:1px solid #3498db66;border-radius:20px;padding:2px 8px;font-size:9.5px;color:#5dade2;margin:2px;}
+  .legend{display:flex;gap:14px;flex-wrap:wrap;margin-bottom:10px;padding:8px 12px;background:#0f0f1a;border-radius:8px;border:1px solid #222;align-items:center;}
+  .legend-title{font-size:11px;color:#666;margin-right:4px;}
+  .legend-item{display:flex;align-items:center;gap:5px;font-size:11px;color:#bbb;}
+  .legend-dot{width:11px;height:11px;border-radius:50%;flex-shrink:0;border:1.5px solid;}
+  .ld-success{background:#0d2e1a;border-color:#27ae60;}
+  .ld-running{background:#0d1f3c;border-color:#3498db;}
+  .ld-failed{background:#2e0d0d;border-color:#e74c3c;}
+  .ld-comp{background:#2e1e0d;border-color:#f39c12;}
+  .inject-row{display:flex;align-items:center;gap:8px;margin-bottom:10px;flex-wrap:wrap;}
+  .inject-label{font-size:12px;color:#aaa;white-space:nowrap;}
+  .inject-select{background:#16213e;color:#ccc;border:1px solid #444;border-radius:8px;padding:7px 10px;font-size:12px;cursor:pointer;flex:1;min-width:140px;}
+  .stepbar{display:flex;align-items:center;justify-content:space-between;font-size:11px;color:#666;margin-bottom:8px;}
+  .progress-track{flex:1;height:3px;background:#333;border-radius:2px;margin:0 8px;overflow:hidden;}
+  .progress-fill{height:100%;background:#e07b25;transition:width .4s;}
+  .log{background:#0a0a15;border-radius:8px;padding:10px 12px;font-size:11px;font-family:var(--font-mono,monospace);line-height:1.9;min-height:66px;max-height:120px;overflow-y:auto;color:#888;margin-bottom:12px;border:1px solid #222;}
+  .log .l-info{color:#5dade2;} .log .l-ok{color:#2ecc71;} .log .l-err{color:#e74c3c;} .log .l-warn{color:#f39c12;}
+  .btn-row{display:flex;gap:10px;margin-bottom:12px;}
+  .btn-play{flex:1;padding:11px;background:#e07b25;color:#fff;border:none;border-radius:10px;font-size:14px;font-weight:700;cursor:pointer;transition:opacity .2s;}
+  .btn-play:disabled{opacity:.5;cursor:default;}
+  .btn-reset{padding:11px 20px;background:#2a2a2a;color:#ccc;border:1px solid #444;border-radius:10px;font-size:13px;cursor:pointer;}
+  .code-toggle{width:100%;padding:10px;background:#16213e;color:#aaa;border:1px solid #333;border-radius:8px;font-size:12px;cursor:pointer;text-align:center;margin-bottom:8px;}
+  .code-block{background:#0a0a15;border-radius:8px;padding:12px;font-family:var(--font-mono,monospace);font-size:10.5px;line-height:1.7;color:#ccc;overflow-x:auto;border:1px solid #222;display:none;}
+  .code-block.show{display:block;}
+  .kw{color:#569cd6;} .cn{color:#4ec9b0;} .st{color:#ce9178;} .cm{color:#6a9955;font-style:italic;} .an{color:#dcdcaa;} .at{color:#9cdcfe;}
+  .dotnet-badge{display:inline-block;background:#512bd4;color:#fff;font-size:10px;font-weight:600;border-radius:4px;padding:2px 7px;margin-left:6px;vertical-align:middle;}
+</style>
+
+<div class="app">
+  <h1>SAGA Pattern <span class="dotnet-badge">.NET</span></h1>
+  <div class="sub">Distributed Transaction Management</div>
+
+  <div class="tabs">
+    <button class="tab active" id="tab-orch" onclick="switchMode('orchestration')">Orchestration</button>
+    <button class="tab" id="tab-cho" onclick="switchMode('choreography')">Choreography</button>
+  </div>
+  <div class="quote" id="quote">"One conductor, full control"</div>
+
+  <div class="legend">
+    <span class="legend-title">Legend:</span>
+    <div class="legend-item"><div class="legend-dot ld-success"></div>Success</div>
+    <div class="legend-item"><div class="legend-dot ld-running"></div>Running</div>
+    <div class="legend-item"><div class="legend-dot ld-failed"></div>Failed</div>
+    <div class="legend-item"><div class="legend-dot ld-comp"></div>Compensating</div>
+  </div>
+
+  <div class="inject-row">
+    <span class="inject-label">Inject failure at:</span>
+    <select class="inject-select" id="fail-select">
+      <option value="-1">No failure (happy path)</option>
+      <option value="0">Order Service</option>
+      <option value="1">Payment Service</option>
+      <option value="2">Inventory Service</option>
+      <option value="3">Shipping Service</option>
+    </select>
+  </div>
+
+  <div class="canvas" id="canvas"></div>
+
+  <div class="stepbar">
+    <span id="step-label">Step 0</span>
+    <div class="progress-track"><div class="progress-fill" id="prog" style="width:0%"></div></div>
+    <span id="step-total">0/8</span>
+  </div>
+
+  <div class="log" id="log"><span class="l-info">Ready. Press Play to start the saga.</span></div>
+
+  <div class="btn-row">
+    <button class="btn-play" id="play-btn" onclick="runSaga()">▶  Play</button>
+    <button class="btn-reset" onclick="resetAll()">Reset</button>
+  </div>
+
+  <button class="code-toggle" onclick="toggleCode()">{ } Show .NET Code</button>
+  <div class="code-block" id="code-block"></div>
+</div>
+
+<script>
+const SERVICES = [
+  {name:'Order',     icon:'🛒', action:'Create order',      compensate:'Cancel order',    event:'ORDER_CREATED',  failEvent:'ORDER_FAIL'},
+  {name:'Payment',   icon:'💳', action:'Charge card',       compensate:'Refund card',     event:'PAYMENT_DONE',   failEvent:'PAYMENT_FAIL'},
+  {name:'Inventory', icon:'📦', action:'Reserve stock',     compensate:'Release stock',   event:'STOCK_RESERVED', failEvent:'STOCK_FAIL'},
+  {name:'Shipping',  icon:'🚚', action:'Schedule delivery', compensate:'Cancel delivery', event:'SHIP_SCHEDULED', failEvent:'SHIP_FAIL'},
+];
+const TOTAL_STEPS = 8;
+let mode='orchestration', running=false, codeOpen=false;
+
+const QUOTES = {
+  orchestration:'"One conductor, full control"',
+  choreography:'"Every service dances to the same event beat"'
+};
+
+const CODES = {
+  orchestration:`<span class="cm">// OrderSagaOrchestrator.cs</span>
+<span class="kw">public class</span> <span class="cn">OrderSagaOrchestrator</span>
+{
+    <span class="kw">private readonly</span> <span class="cn">IOrderService</span>     <span class="at">_order</span>;
+    <span class="kw">private readonly</span> <span class="cn">IPaymentService</span>   <span class="at">_payment</span>;
+    <span class="kw">private readonly</span> <span class="cn">IInventoryService</span> <span class="at">_inventory</span>;
+    <span class="kw">private readonly</span> <span class="cn">IShippingService</span>  <span class="at">_shipping</span>;
+
+    <span class="kw">public async</span> <span class="cn">Task</span> <span class="an">PlaceOrderAsync</span>(<span class="cn">Order</span> order)
+    {
+        <span class="kw">try</span>
+        {
+            <span class="kw">await</span> <span class="at">_order</span>.<span class="an">CreateAsync</span>(order);
+            <span class="kw">await</span> <span class="at">_payment</span>.<span class="an">ChargeAsync</span>(order);
+            <span class="kw">await</span> <span class="at">_inventory</span>.<span class="an">ReserveAsync</span>(order);
+            <span class="kw">await</span> <span class="at">_shipping</span>.<span class="an">ScheduleAsync</span>(order);
+        }
+        <span class="kw">catch</span> (<span class="cn">Exception</span>)
+        {
+            <span class="kw">await</span> <span class="at">_shipping</span>.<span class="an">CancelAsync</span>(order);
+            <span class="kw">await</span> <span class="at">_inventory</span>.<span class="an">ReleaseAsync</span>(order);
+            <span class="kw">await</span> <span class="at">_payment</span>.<span class="an">RefundAsync</span>(order);
+            <span class="kw">await</span> <span class="at">_order</span>.<span class="an">CancelAsync</span>(order);
+        }
+    }
+}`,
+  choreography:`<span class="cm">// OrderCreatedConsumer.cs</span>
+<span class="kw">public class</span> <span class="cn">PlaceOrderConsumer</span>
+    : <span class="cn">IConsumer</span>&lt;<span class="cn">PlaceOrder</span>&gt;
+{
+    <span class="kw">public async</span> <span class="cn">Task</span> <span class="an">Consume</span>(
+        <span class="cn">ConsumeContext</span>&lt;<span class="cn">PlaceOrder</span>&gt; context)
+    {
+        <span class="kw">await</span> <span class="at">_order</span>.<span class="an">CreateAsync</span>(context.Message.Order);
+        <span class="kw">await</span> context.<span class="an">Publish</span>(<span class="kw">new</span> <span class="cn">OrderCreated</span>(context.Message.Order));
+    }
+}
+
+<span class="cm">// PaymentConsumer.cs</span>
+<span class="kw">public class</span> <span class="cn">OrderCreatedConsumer</span>
+    : <span class="cn">IConsumer</span>&lt;<span class="cn">OrderCreated</span>&gt;
+{
+    <span class="kw">public async</span> <span class="cn">Task</span> <span class="an">Consume</span>(
+        <span class="cn">ConsumeContext</span>&lt;<span class="cn">OrderCreated</span>&gt; context)
+    {
+        <span class="kw">await</span> <span class="at">_payment</span>.<span class="an">ChargeAsync</span>(context.Message.Order);
+        <span class="kw">await</span> context.<span class="an">Publish</span>(<span class="kw">new</span> <span class="cn">PaymentProcessed</span>(context.Message.Order));
+    }
+}
+
+<span class="cm">// Compensate on failure</span>
+<span class="kw">public class</span> <span class="cn">StockFailedConsumer</span>
+    : <span class="cn">IConsumer</span>&lt;<span class="cn">StockFailed</span>&gt;
+{
+    <span class="kw">public async</span> <span class="cn">Task</span> <span class="an">Consume</span>(
+        <span class="cn">ConsumeContext</span>&lt;<span class="cn">StockFailed</span>&gt; context)
+    {
+        <span class="kw">await</span> <span class="at">_payment</span>.<span class="an">RefundAsync</span>(context.Message.Order);
+        <span class="kw">await</span> <span class="at">_order</span>.<span class="an">CancelAsync</span>(context.Message.Order);
+    }
+}`
+};
+
+function switchMode(m){
+  if(running) return;
+  mode=m;
+  document.getElementById('tab-orch').classList.toggle('active',m==='orchestration');
+  document.getElementById('tab-cho').classList.toggle('active',m==='choreography');
+  document.getElementById('quote').textContent=QUOTES[m];
+  if(codeOpen) document.getElementById('code-block').innerHTML=CODES[m];
+  resetAll(true);
+}
+
+function buildCanvas(){
+  const c=document.getElementById('canvas');
+  if(mode==='orchestration'){
+    c.innerHTML=`
+      <div class="orch-node" id="orch-node">Order Orchestrator</div>
+      <div class="vert-line" id="vline"></div>
+      <div class="svc-row" id="svc-row"></div>`;
+  } else {
+    c.innerHTML=`
+      <div class="event-bus" id="event-bus">
+        <div style="font-weight:600;margin-bottom:4px;color:#5dade2">📡 MassTransit / RabbitMQ</div>
+        <div id="event-pills"></div>
+      </div>
+      <div class="svc-row" id="svc-row"></div>`;
+  }
+  const row=document.getElementById('svc-row');
+  SERVICES.forEach((s,i)=>{
+    const d=document.createElement('div');
+    d.className='svc-box'; d.id=`svc-${i}`;
+    d.innerHTML=`<div class="svc-icon">${s.icon}</div><div class="svc-name">${s.name}</div><div class="svc-st" id="st-${i}">${mode==='orchestration'?'idle':'listening…'}</div>`;
+    row.appendChild(d);
+  });
+}
+
+function setSvc(i,state,text){
+  const b=document.getElementById(`svc-${i}`);
+  const s=document.getElementById(`st-${i}`);
+  if(!b||!s) return;
+  b.className=`svc-box ${state}`; s.textContent=text;
+}
+function setOrch(state){
+  const n=document.getElementById('orch-node');
+  const v=document.getElementById('vline');
+  if(!n) return;
+  n.className=`orch-node ${state}`;
+  if(v) v.className=`vert-line ${state==='active'?'active':state==='compensating'?'comp':''}`;
+}
+function addEvent(label,type='info'){
+  const ep=document.getElementById('event-pills');
+  if(!ep) return;
+  const p=document.createElement('span');
+  p.className='event-pill';
+  p.style.borderColor=type==='err'?'#e74c3c66':type==='warn'?'#f39c1266':'#3498db66';
+  p.style.color=type==='err'?'#e74c3c':type==='warn'?'#f39c12':'#5dade2';
+  p.textContent=label; ep.appendChild(p);
+}
+function log(msg,type='info'){
+  const l=document.getElementById('log');
+  const d=document.createElement('div');
+  const ts=new Date().toLocaleTimeString('en',{hour12:false,hour:'2-digit',minute:'2-digit',second:'2-digit'});
+  d.className=`l-${type}`;
+  d.innerHTML=`<span style="color:#444">${ts}</span>  ${msg}`;
+  l.appendChild(d); l.scrollTop=l.scrollHeight;
+}
+function setProgress(step){
+  document.getElementById('prog').style.width=`${(step/TOTAL_STEPS)*100}%`;
+  document.getElementById('step-label').textContent=`Step ${step}`;
+  document.getElementById('step-total').textContent=`${step}/${TOTAL_STEPS}`;
+}
+function delay(ms){return new Promise(r=>setTimeout(r,ms));}
+
+async function runSaga(){
+  if(running) return;
+  running=true;
+  document.getElementById('play-btn').disabled=true;
+  document.getElementById('log').innerHTML='';
+  let step=0;
+  const failAt=parseInt(document.getElementById('fail-select').value);
+
+  log(`Starting ${mode==='orchestration'?'Orchestration':'Choreography'} Saga`,'info');
+  setProgress(++step);
+  await delay(400);
+
+  if(mode==='orchestration'){
+    setOrch('active');
+    log('OrderSagaOrchestrator initialized — PlaceOrderAsync called','info');
+    await delay(500);
+  } else {
+    log('Publishing PlaceOrder command via MassTransit…','info');
+    addEvent('PlaceOrder');
+    await delay(500);
+  }
+
+  for(let i=0;i<SERVICES.length;i++){
+    const s=SERVICES[i];
+    if(mode==='orchestration'){
+      log(`await _${s.name.toLowerCase()}.${s.action.split(' ').map(w=>w[0].toUpperCase()+w.slice(1)).join('')}Async(order)`,'info');
+    } else {
+      log(`${s.name}Consumer.Consume() ← ${i===0?'PlaceOrder':SERVICES[i-1].event}`,'info');
+    }
+    setSvc(i,'running',s.action+'…');
+    await delay(800);
+    setProgress(++step);
+
+    if(i===failAt){
+      setSvc(i,'failed','✗ Exception');
+      log(`✗ ${s.name}Service threw — ${s.failEvent}`,'err');
+      if(mode==='choreography') addEvent(s.failEvent,'err');
+      await delay(500);
+      if(mode==='orchestration'){ setOrch('compensating'); log('catch block — compensating in reverse…','warn'); }
+      else { log('Failure event published — compensation consumers triggered…','warn'); }
+      await delay(400);
+      for(let j=i-1;j>=0;j--){
+        setSvc(j,'compensating',SERVICES[j].compensate+'…');
+        if(mode==='orchestration'){
+          log(`await _${SERVICES[j].name.toLowerCase()}.${SERVICES[j].compensate.split(' ')[0][0].toUpperCase()+SERVICES[j].compensate.split(' ')[0].slice(1)}Async(order)`,'warn');
+        } else {
+          addEvent(`${SERVICES[j].name}Compensate`,'warn');
+          log(`${SERVICES[j].name}CompensateConsumer — ${SERVICES[j].compensate}`,'warn');
+        }
+        await delay(700);
+        setSvc(j,'compensated','↩ done');
+        setProgress(++step);
+      }
+      if(mode==='orchestration') setOrch('compensating');
+      log('Saga rolled back. System is consistent. ✓','warn');
+      break;
+    } else {
+      setSvc(i,'success','✓ '+s.event);
+      if(mode==='choreography') addEvent(s.event,'ok');
+      log(`✓ ${s.name}: ${s.event} published`,'ok');
+      await delay(300);
+      if(i===SERVICES.length-1){
+        if(mode==='orchestration') setOrch('done');
+        log('PlaceOrderAsync completed — saga committed 🎉','ok');
+        setProgress(TOTAL_STEPS);
+      }
+    }
+  }
+  running=false;
+  document.getElementById('play-btn').disabled=false;
+}
+
+function resetAll(silent){
+  running=false;
+  document.getElementById('play-btn').disabled=false;
+  if(!silent) document.getElementById('log').innerHTML='<span class="l-info">Ready. Press Play to start the saga.</span>';
+  setProgress(0); buildCanvas();
+}
+function toggleCode(){
+  codeOpen=!codeOpen;
+  const b=document.getElementById('code-block');
+  b.classList.toggle('show',codeOpen);
+  document.querySelector('.code-toggle').textContent=codeOpen?'{ } Hide .NET Code':'{ } Show .NET Code';
+  if(codeOpen) b.innerHTML=CODES[mode];
+}
+
+buildCanvas();
+</script>
