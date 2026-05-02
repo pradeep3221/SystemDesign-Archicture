@@ -402,3 +402,269 @@ If you tell me your target:
 👉 “platform team rollout” vs “guidance doc” vs “governance control”
 
 I can refine this into the exact format your org needs.
+
+
+
+
+
+Here’s a **production-ready Prompt Template + Questionnaire** you can use to drive your Architecture Decision Platform (or even plug into an LLM like GPT/Claude).
+
+This is designed to:
+
+* Collect structured inputs
+* Feed your JSON data model
+* Generate **Golden Path outputs + NuGet + architecture decisions**
+
+---
+
+# 🧠 🧩 MASTER PROMPT TEMPLATE (LLM-Ready)
+
+Use this as your **system or orchestrator prompt**.
+
+```text
+You are an Enterprise .NET Architecture Decision Assistant.
+
+Your goal is to recommend:
+1. Project Architecture (pattern + layering)
+2. Technology Stack (libraries/tools)
+3. Golden Path Implementation
+4. NuGet Package Groups (copy-paste XML)
+5. Testing Strategy
+6. AI Controls (if applicable)
+
+Follow these rules strictly:
+- Prefer simplicity over complexity
+- Use Clean Architecture + CQRS as default
+- Use Minimal APIs for new services
+- Avoid over-engineering
+- Apply MUST / SHOULD / MAY governance
+- Recommend only production-ready libraries
+
+Inputs will be provided as a structured questionnaire.
+
+Output must include:
+- Recommended Project Type
+- Architecture Pattern
+- Library Stack (by layer)
+- Golden Path Summary
+- NuGet Package XML
+- Testing Strategy
+- Key Tradeoffs
+- When NOT to use this approach
+
+If inputs are incomplete:
+- Make reasonable assumptions
+- Clearly state assumptions
+
+Be concise, structured, and actionable.
+```
+
+---
+
+# 📝 📊 QUESTIONNAIRE (User Input Form)
+
+You can use this in:
+
+* UI form
+* CLI prompt
+* API payload
+* Chat-based flow
+
+---
+
+## 🧾 1. Project Basics
+
+```json id="q1basics"
+{
+  "projectName": "",
+  "projectType": "web-api | microservice | worker | ui | ai-app",
+  "isNewProject": true,
+  "description": ""
+}
+```
+
+---
+
+## 🧠 2. Business & Domain Complexity
+
+```json id="q2domain"
+{
+  "domainComplexity": "low | medium | high",
+  "businessRulesComplexity": "low | medium | high",
+  "dataComplexity": "simple | relational | complex",
+  "requiresAuditHistory": false
+}
+```
+
+---
+
+## 👥 3. Team & Org Context
+
+```json id="q3team"
+{
+  "teamSize": "1-3 | 3-5 | 5-10 | 10+",
+  "experienceLevel": "junior | mixed | senior",
+  "deliverySpeedPriority": "low | medium | high",
+  "governanceStrictness": "low | medium | high"
+}
+```
+
+---
+
+## ⚡ 4. Scale & Performance
+
+```json id="q4scale"
+{
+  "expectedUsers": "low | medium | high",
+  "trafficPattern": "steady | bursty | unpredictable",
+  "latencySensitivity": "low | medium | high",
+  "scalabilityRequirement": "low | medium | high"
+}
+```
+
+---
+
+## 🔌 5. Integration & Architecture
+
+```json id="q5integration"
+{
+  "needsMicroservices": false,
+  "integrationType": "none | api | event-driven | hybrid",
+  "externalSystems": true,
+  "requiresAsyncProcessing": true
+}
+```
+
+---
+
+## 💾 6. Data & Storage
+
+```json id="q6data"
+{
+  "databaseType": "sql | nosql | mixed",
+  "readWriteRatio": "read-heavy | write-heavy | balanced",
+  "cachingNeeded": true,
+  "dataConsistency": "strong | eventual"
+}
+```
+
+---
+
+## 🧠 7. AI / GenAI Requirements
+
+```json id="q7ai"
+{
+  "usesAI": true,
+  "aiUseCases": ["rag", "classification", "chat", "document-processing"],
+  "requiresVectorDB": true,
+  "modelPreference": "azure-openai | openai | local | none",
+  "costSensitivity": "low | medium | high"
+}
+```
+
+---
+
+## 🔐 8. Security & Auth
+
+```json id="q8security"
+{
+  "authType": "jwt | oauth | none",
+  "externalIdentityProvider": true,
+  "requiresFineGrainedAuth": true,
+  "complianceNeeds": ["pii", "gdpr", "none"]
+}
+```
+
+---
+
+## 🧪 9. Testing Expectations
+
+```json id="q9testing"
+{
+  "testCoveragePriority": "low | medium | high",
+  "requiresE2E": true,
+  "requiresContractTesting": true,
+  "performanceTestingNeeded": true
+}
+```
+
+---
+
+## 🚀 10. DevOps & Platform
+
+```json id="q10devops"
+{
+  "cloudProvider": "azure | aws | gcp | none",
+  "containerized": true,
+  "usesKubernetes": false,
+  "ciCdMaturity": "low | medium | high"
+}
+```
+
+---
+
+# 🎯 🧾 FINAL PROMPT (COMBINED EXECUTION)
+
+Use this to call your LLM:
+
+```text
+Based on the following inputs, generate an enterprise-grade architecture recommendation.
+
+INPUT:
+<INSERT JSON FROM QUESTIONNAIRE>
+
+OUTPUT FORMAT:
+
+1. 🏗️ Project Type Recommendation
+2. 🧠 Architecture Pattern (with justification)
+3. 📚 Library Stack (by layer: Presentation, Application, Domain, Infrastructure)
+4. 🏆 Golden Path Summary
+5. 📦 NuGet Package Group (XML - copy-paste ready)
+6. 🧪 Testing Strategy (pyramid mapping)
+7. 🧠 AI Architecture (if applicable)
+8. ⚙️ Key Design Decisions
+9. ⚠️ Tradeoffs
+10. 🚫 When NOT to use this approach
+11. 📁 Suggested Folder Structure
+12. 🔌 Component Wiring Overview
+
+Be concise, structured, and production-ready.
+```
+
+---
+
+# 🔥 Example UX Flow (How This Feels in Product)
+
+1. User answers questionnaire (form or chat)
+2. System feeds JSON → prompt
+3. LLM returns:
+
+   * Architecture
+   * Libraries
+   * NuGet XML
+   * Folder structure
+
+👉 User copies → starts coding in minutes
+
+---
+
+# 🚀 Why This Works
+
+This prompt turns your system into:
+
+* ✅ Architecture consultant
+* ✅ Tech lead decision engine
+* ✅ Code bootstrap generator
+
+---
+
+# 👉 If you want next step
+
+I can:
+
+* Convert this into a **React/Angular form UI**
+* Build a **decision engine (non-LLM rules + fallback)**
+* Generate **sample outputs for real scenarios**
+* Create **API endpoints for this flow (.NET / FastAPI)**
+
+Just tell me 👍
